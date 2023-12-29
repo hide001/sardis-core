@@ -1,6 +1,12 @@
 Sardis Blockchain Node    
 ## Usage/Examples
 
+change directory to sardis-core by
+```bash
+cd sardis-core
+```
+then
+
 Display help
 ```bash
 ./node-setup.sh --help
