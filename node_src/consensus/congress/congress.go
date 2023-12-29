@@ -20,6 +20,7 @@ package congress
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+
 
 	"github.com/ethereum/go-ethereum/metrics"
 
@@ -50,6 +53,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	lru "github.com/hashicorp/golang-lru"
 	"golang.org/x/crypto/sha3"
+
 )
 
 const (
@@ -108,14 +112,6 @@ var (
 	// errInvalidExtraValidators is returned if validator data in extra-data field is invalid.
 	errInvalidExtraValidators = errors.New("Invalid extra validators in extra data field")
 
-	// errInvalidCheckpointValidators is returned if a checkpoint block contains an
-	// invalid list of validators (i.e. non divisible by 20 bytes).
-	errInvalidCheckpointValidators = errors.New("invalid validator list on checkpoint block")
-
-	// errMismatchingCheckpointValidators is returned if a checkpoint block contains a
-	// list of validators different than the one the local node calculated.
-	errMismatchingCheckpointValidators = errors.New("mismatching validator list on checkpoint block")
-
 	// errInvalidMixDigest is returned if a block's mix digest is non-zero.
 	errInvalidMixDigest = errors.New("non-zero mix digest")
 
@@ -128,10 +124,6 @@ var (
 	// errWrongDifficulty is returned if the difficulty of a block doesn't match the
 	// turn of the validator.
 	errWrongDifficulty = errors.New("wrong difficulty")
-
-	// errInvalidTimestamp is returned if the timestamp of a block is lower than
-	// the previous block's timestamp + the minimum block period.
-	errInvalidTimestamp = errors.New("invalid timestamp")
 
 	// ErrInvalidTimestamp is returned if the timestamp of a block is lower than
 	// the previous block's timestamp + the minimum block period.
@@ -629,10 +621,73 @@ func (c *Congress) Finalize(chain consensus.ChainHeaderReader, header *types.Hea
 		receipts = &rs
 	}
 
-	// execute block reward tx.
+	// deposit block reward if any tx exists.
+	var addr [] common.Address
+	var gass [] uint64
+
+		out3, err := json.Marshal(txs)
+	    if err != nil {
+	        panic (err)
+	    }
+
+		log.Info("FULL TRANSACTION OBJECT >>> " + string(out3))
+
+
+	
 	if len(*txs) > 0 {
-		if err := c.trySendBlockReward(chain, header, state); err != nil {
-			return err
+				
+		var totalGasSum uint64
+
+		for i := 0; i < len(*txs); i++ {
+			TO := (*txs)[i]
+
+			if TO.To() == nil {
+				addr = append(addr, common.HexToAddress("0x0000000000000000000000000000000000000000"))
+			} else {
+				addr = append(addr, *TO.To())
+			}
+
+			gasFee := TO.Gas() * TO.GasPrice().Uint64()
+			gass = append(gass, gasFee)
+
+			// Accumulate gasFee to totalGasSum
+			totalGasSum += gasFee
+		}
+		
+	    fee := state.GetBalance(consensus.FeeRecoder)
+
+		feeUint64 := fee.Uint64()
+
+		if totalGasSum > feeUint64 {
+		
+			percentDifference := float64(totalGasSum-feeUint64) / float64(totalGasSum) * 100
+
+			for i := 0; i < len(gass); i++ {
+				decreaseAmount := uint64(float64(gass[i]) * (percentDifference / 100.0))
+				gass[i] -= decreaseAmount
+			}
+		}
+
+
+
+	    out, err := json.Marshal(addr)
+	    if err != nil {
+	        panic (err)
+	    }
+
+	    out1, err := json.Marshal(gass)
+	    if err != nil {
+	        panic (err)
+	    }
+	    
+	    log.Info("REQUIRED TO ADDRESS FOR TEST 2 >> " + string(out))
+	    log.Info("REQUIRED GAS INFO FOR TEST 2 >> " + string(out1))
+
+
+	    	
+		if err := c.trySendBlockReward(chain, header, state,addr,gass); err != nil {
+			//panic(err)
+			log.Info(err.Error())
 		}
 	}
 
@@ -722,16 +777,77 @@ func (c *Congress) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header
 	}
 
 	// deposit block reward if any tx exists.
+	var addr [] common.Address
+	var gass [] uint64
+	//addr = new[len(txs)]
+	
+	    out3, err := json.Marshal(txs)
+	    if err != nil {
+	        panic (err)
+	    }
+
+		log.Info("FULL TRANSACTION OBJECTS >>> " + string(out3))
+		
+	
 	if len(txs) > 0 {
-		if err := c.trySendBlockReward(chain, header, state); err != nil {
-			panic(err)
+				
+		var totalGasSum uint64
+
+		for i := 0; i < len(txs); i++ {
+			TO := txs[i]
+
+			if TO.To() == nil {
+				addr = append(addr, common.HexToAddress("0x0000000000000000000000000000000000000000"))
+			} else {
+				addr = append(addr, *TO.To())
+			}
+
+			gasFee := TO.Gas() * TO.GasPrice().Uint64()
+			gass = append(gass, gasFee)
+
+			// Accumulate gasFee to totalGasSum
+			totalGasSum += gasFee
+		}
+		
+	    fee := state.GetBalance(consensus.FeeRecoder)
+
+		feeUint64 := fee.Uint64()
+
+		if totalGasSum > feeUint64 {
+		
+			percentDifference := float64(totalGasSum-feeUint64) / float64(totalGasSum) * 100
+
+			for i := 0; i < len(gass); i++ {
+				decreaseAmount := uint64(float64(gass[i]) * (percentDifference / 100.0))
+				gass[i] -= decreaseAmount
+			}
+		}
+
+	    out, err := json.Marshal(addr)
+	    if err != nil {
+	        panic (err)
+	    }
+
+	    out1, err := json.Marshal(gass)
+	    if err != nil {
+	        panic (err)
+	    }
+	    
+	    log.Info("REQUIRED TO ADDRESS FOR TEST >> " + string(out))
+	    log.Info("REQUIRED GAS INFO FOR TEST >> " + string(out1))
+		
+		if err := c.trySendBlockReward(chain, header, state,addr,gass); err != nil {
+			//panic(err)
+			log.Info(err.Error())
+
 		}
 	}
 
 	// do epoch thing at the end, because it will update active validators
 	if header.Number.Uint64()%c.config.Epoch == 0 {
 		if _, err := c.doSomethingAtEpoch(chain, header, state); err != nil {
-			panic(err)
+			//panic(err)
+			log.Info(err.Error())
 		}
 	}
 
@@ -783,7 +899,7 @@ func (c *Congress) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header
 	return types.NewBlock(header, txs, nil, receipts, new(trie.Trie)), receipts, nil
 }
 
-func (c *Congress) trySendBlockReward(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) error {
+func (c *Congress) trySendBlockReward(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, addr [] common.Address,gass [] uint64) error {
 	fee := state.GetBalance(consensus.FeeRecoder)
 	if fee.Cmp(common.Big0) <= 0 {
 		return nil
@@ -793,9 +909,17 @@ func (c *Congress) trySendBlockReward(chain consensus.ChainHeaderReader, header 
 	state.AddBalance(header.Coinbase, fee)
 	// reset fee
 	state.SetBalance(consensus.FeeRecoder, common.Big0)
-
+	
+	/*//get all 'from'
+	froms := make([]uint32, len(txs)) 
+	for i := uint32(0); i < uint32(len(txs)); i++ {
+		froms[i] = txs[i].from
+	}*/	
+	
+	
+	
 	method := "distributeBlockReward"
-	data, err := c.abi[systemcontract.ValidatorsContractName].Pack(method)
+	data, err := c.abi[systemcontract.ValidatorsContractName].Pack(method,addr,gass)
 	if err != nil {
 		log.Error("Can't pack data for distributeBlockReward", "err", err)
 		return err
